@@ -1,0 +1,26 @@
+{% extends "coach/base.html" %}
+{% block content %}
+<div class="card">
+  <h2>Final report: {{ s.role }}</h2>
+  <h3>Average score: {{ avg }}/10</h3>
+  <p><b>Readiness:</b> {{ s.summary.readiness }}</p>
+
+  <h4>Strengths</h4>
+  <ul>{% for x in s.summary.strengths %}<li>{{ x }}</li>{% endfor %}</ul>
+
+  <h4>Weaknesses</h4>
+  <ul>{% for x in s.summary.weaknesses %}<li>{{ x }}</li>{% endfor %}</ul>
+
+  <h4>Study plan</h4>
+  <ol>{% for x in s.summary.study_plan %}<li>{{ x }}</li>{% endfor %}</ol>
+
+  <a class="btn" href="/">New interview</a>
+</div>
+
+<div class="card">
+  <h4>Question breakdown</h4>
+  {% for q in qas %}
+    <p>{{ forloop.counter }}. {{ q.question }} - <b>{{ q.score }}/10</b></p>
+  {% endfor %}
+</div>
+{% endblock %}

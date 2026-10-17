@@ -1,0 +1,5 @@
+• Interpreted: Python runs code line by line through an interpreter, which makes finding and fixing errors fast.
+• Readable Syntax: It uses indentation (whitespace) instead of curly braces to organize code.
+• Dynamically Typed: You do not need to explicitly declare data types for variables; Python figures them out automatically at runtime.
+• Multi-Paradigm: It supports object-oriented, procedural, and functional programming styles.
+• Open Source: The language is free to use, distribute, and modify, with a large collection of public libraries and modules.

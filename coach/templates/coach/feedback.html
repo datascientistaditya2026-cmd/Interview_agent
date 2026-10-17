@@ -1,0 +1,29 @@
+{% extends "coach/base.html" %}
+{% block content %}
+<div class="card">
+  <h3>{{ qa.question }}</h3>
+  <p><b>Your answer:</b> {{ qa.answer|default:"(I don't know)" }}</p>
+
+  <h2 class="{% if qa.verdict == 'correct' %}good{% elif qa.verdict == 'partial' %}mid{% else %}bad{% endif %}">
+    Score {{ qa.score }}/10 · {{ qa.verdict|title }}
+  </h2>
+  <p>{{ qa.feedback }}</p>
+
+  <h4>✅ Correct answer</h4>
+  <p>{{ qa.ideal_answer|linebreaksbr }}</p>
+
+  <h4>💡 How to improve</h4>
+  <ul>{% for t in qa.tips %}<li>{{ t }}</li>{% endfor %}</ul>
+
+  {% if qa.study_topics %}
+  <h4>📚 Study next</h4>
+  <ul>{% for t in qa.study_topics %}<li>{{ t }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if finished %}
+    <a class="btn" href="{% url 'summary' s.pk %}">See final report</a>
+  {% else %}
+    <a class="btn" href="{% url 'session' s.pk %}" onclick="this.textContent='Preparing next question...'">Next question</a>
+  {% endif %}
+</div>
+{% endblock %}

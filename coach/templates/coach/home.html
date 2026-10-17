@@ -1,0 +1,28 @@
+{% extends "coach/base.html" %}
+{% block content %}
+<div class="card">
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+    <label>Target role</label>
+    <input name="role" placeholder="e.g. Python Django Developer" required>
+
+    <label>Topic (label only, optional)</label>
+    <input name="topic" placeholder="e.g. Python basics">
+
+    <label>Study document (.pdf, .txt, .md)</label>
+    <input type="file" name="document" accept=".pdf,.txt,.md" required>
+
+    <label>Number of questions</label>
+    <select name="total">
+      <option>5</option>
+      <option>8</option>
+      <option>10</option>
+    </select>
+
+    <button>Start interview</button>
+    <div id="loading">Reading your document...</div>
+  </form>
+</div>
+{% endblock %}

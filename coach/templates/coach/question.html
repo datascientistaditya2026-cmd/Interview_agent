@@ -1,0 +1,16 @@
+{% extends "coach/base.html" %}
+{% block content %}
+<div class="card">
+  <small>Question {{ number }} of {{ s.total_questions }} · {{ s.role }}</small>
+  <h3>{{ qa.question }}</h3>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="qa_id" value="{{ qa.id }}">
+    <textarea name="answer" rows="7" placeholder="Type your answer..."></textarea>
+    <button>Submit answer</button>
+    <button name="dont_know" value="1" class="alt" formnovalidate>I don't know</button>
+    <div id="loading">Checking your answer... this takes a few seconds.</div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,201 @@
+{% extends "coach/base.html" %}
+{% block content %}
+{% csrf_token %}
+
+<div class="card">
+  <small>{{ s.role }} · voice interview</small>
+  <div id="status" style="font-size:1.1rem;margin:.8rem 0">Press Start, then answer out loud.</div>
+  <h3 id="question"></h3>
+
+  <div id="mic" style="font-size:3rem;text-align:center;margin:.5rem 0;opacity:.35">🎤</div>
+
+  <textarea id="transcript" rows="4" placeholder="Your spoken answer appears here"></textarea>
+
+  <button id="start">Start interview</button>
+  <button id="done" class="alt" hidden>Done answering</button>
+  <button id="idk" class="alt" hidden>I don't know</button>
+  <button id="repeat" class="alt" hidden>Repeat question</button>
+  <button id="stop" class="alt" hidden>Stop</button>
+  <p id="unsupported" class="err" hidden>Speech recognition is not supported here. Please use Chrome or Edge.</p>
+</div>
+
+<div class="card" id="feedback" hidden>
+  <h2 id="fb-score"></h2>
+  <p id="fb-text"></p>
+  <h4>✅ Correct answer</h4><p id="fb-model"></p>
+  <h4>📚 Study next</h4><ul id="fb-topics"></ul>
+</div>
+
+<div class="card" id="final" hidden>
+  <h2 id="final-score"></h2>
+  <p id="final-text"></p>
+  <a class="btn" id="final-link" href="#">See full report</a>
+  <a class="btn alt" href="/">New interview</a>
+</div>
+
+<script>
+const API_NEXT = "{% url 'api_next' s.pk %}";
+const API_ANSWER = "{% url 'api_answer' s.pk %}";
+const CSRF = document.querySelector("[name=csrfmiddlewaretoken]").value;
+const LANG = "en-IN";                      // change to "en-US" if recognition is poor for you
+
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const synth = window.speechSynthesis;
+
+let running = false, current = null, action = null, finishListening = null;
+
+function setStatus(t) { $("status").textContent = t; }
+function setMic(on) { $("mic").style.opacity = on ? 1 : 0.35; }
+
+// ---------- agent speaks ----------
+function speakOne(text) {
+  return new Promise(resolve => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = LANG; u.rate = 0.95;
+    u.onend = resolve; u.onerror = resolve;
+    synth.speak(u);
+  });
+}
+async function speak(text) {               // split into sentences: Chrome cuts off long speech
+  const parts = text.match(/[^.!?]+[.!?]*/g) || [text];
+  for (const p of parts) {
+    if (!running) return;
+    if (p.trim()) await speakOne(p.trim());
+  }
+}
+
+// ---------- user speaks ----------
+function listen() {
+  return new Promise(resolve => {
+    $("transcript").value = "";
+    let finalText = "", finished = false, timer = null;
+    const rec = new SR();
+    rec.lang = LANG; rec.continuous = true; rec.interimResults = true;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true; clearTimeout(timer); setMic(false);
+      try { rec.stop(); } catch (e) {}
+      resolve($("transcript").value.trim());
+    };
+    finishListening = finish;
+    const arm = ms => { clearTimeout(timer); timer = setTimeout(finish, ms); };
+
+    rec.onresult = e => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText += t + " "; else interim += t;
+      }
+      $("transcript").value = (finalText + interim).trim();
+      arm(3500);                            // 3.5 seconds of silence = answer finished
+    };
+    rec.onerror = e => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        setStatus("Microphone is blocked. Allow it in the browser address bar and press Start again.");
+        running = false; finish();
+      }
+    };
+    rec.onend = () => { if (!finished) { try { rec.start(); } catch (e) {} } };   // keep listening
+
+    setMic(true);
+    try { rec.start(); } catch (e) {}
+    arm(10000);                             // wait up to 10 seconds for the user to begin
+  });
+}
+
+// ---------- screen ----------
+function showFeedback(r) {
+  $("fb-score").textContent = r.verdict === "unknown" ? "Let's learn this one"
+                              : `Score ${r.score}/10 · ${r.verdict}`;
+  $("fb-text").textContent = r.feedback;
+  $("fb-model").textContent = r.model_answer;
+  $("fb-topics").innerHTML = "";
+  r.study_topics.forEach(t => {
+    const li = document.createElement("li");
+    li.textContent = t;
+    $("fb-topics").appendChild(li);
+  });
+  $("feedback").hidden = false;
+}
+
+// ---------- interview loop ----------
+async function interview() {
+  while (running) {
+    const res = await (await fetch(API_NEXT)).json();
+    if (res.done) return finishInterview(res);
+
+    current = res;
+    $("question").textContent = `Question ${res.number} of ${res.total}: ${res.question}`;
+    $("feedback").hidden = true;
+    $("transcript").value = "";
+    setStatus("🔊 Asking the question...");
+    await speak(`Question ${res.number}. ${res.question}`);
+
+    let answer = "";
+    for (let tries = 0; tries < 3 && running; tries++) {
+      action = null;
+      setStatus("🎤 Listening... speak your answer. Say 'I don't know' to skip.");
+      answer = await listen();
+      if (!running) return;
+      if (action === "repeat") break;
+      if (answer || action === "idk") break;
+      if (tries < 2) await speak("I did not hear anything. Please answer, or say I don't know.");
+    }
+
+    const low = answer.toLowerCase();
+    if (action === "repeat" || (low.length < 30 && /\brepeat\b/.test(low))) continue;   // same question again
+    if (action === "idk" || (low.length < 30 && /(don'?t know|dont know|no idea|skip|pass)/.test(low))) answer = "";
+
+    setStatus("🤔 Checking your answer...");
+    const body = new URLSearchParams({ qa_id: current.qa_id, answer });
+    const r = await (await fetch(API_ANSWER, { method: "POST", headers: { "X-CSRFToken": CSRF }, body })).json();
+    showFeedback(r);
+
+    setStatus("🔊 Feedback");
+    if (r.verdict === "unknown") await speak("No problem, let's learn it. The correct answer is: " + r.model_answer);
+    else await speak(`You scored ${r.score} out of 10. ${r.feedback} The correct answer is: ${r.model_answer}`);
+    await sleep(800);
+  }
+}
+
+async function finishInterview(res) {
+  $("question").textContent = "";
+  $("final-score").textContent = `Interview complete. Average score: ${res.avg}/10`;
+  $("final-text").textContent = res.readiness;
+  $("final-link").href = res.summary_url;
+  $("final").hidden = false;
+  setStatus("✅ Done");
+  stopUI();
+  running = true;
+  await speak(`Interview complete. Your average score is ${res.avg} out of 10. ${res.readiness}`);
+  running = false;
+}
+
+function stopUI() {
+  ["done", "idk", "repeat", "stop"].forEach(id => $(id).hidden = true);
+  $("start").hidden = false; setMic(false);
+}
+
+// ---------- buttons ----------
+if (!SR) { $("unsupported").hidden = false; $("start").disabled = true; }
+
+$("start").onclick = () => {
+  running = true;
+  $("start").hidden = true;
+  ["done", "idk", "repeat", "stop"].forEach(id => $(id).hidden = false);
+  interview();
+};
+$("done").onclick = () => { if (finishListening) finishListening(); };
+$("idk").onclick = () => { action = "idk"; if (finishListening) finishListening(); };
+$("repeat").onclick = () => { action = "repeat"; if (finishListening) finishListening(); };
+$("stop").onclick = () => {
+  running = false; synth.cancel();
+  if (finishListening) finishListening();
+  setStatus("Stopped. Press Start to continue where you left off.");
+  stopUI();
+};
+</script>
+{% endblock %}
